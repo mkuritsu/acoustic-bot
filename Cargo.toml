@@ -7,9 +7,9 @@ edition = "2024"
 anyhow = "1.0.102"
 reqwest = "0.12.2"
 serenity = "0.12.5"
-songbird = "0.6.0"
+songbird = { version = "0.6.0", features = ["builtin-queue"] }
 symphonia = { version = "0.5.2", features = ["mp3", "aac", "isomp4", "alac"] }
-tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "signal"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
