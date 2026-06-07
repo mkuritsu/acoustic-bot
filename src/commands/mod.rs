@@ -2,7 +2,7 @@ use serenity::{
     all::{Command, Context, EventHandler, Interaction, Ready},
     async_trait,
 };
-use tracing::error;
+use tracing::{error, info};
 
 mod play;
 
@@ -16,6 +16,7 @@ impl EventHandler for CommandHandler {
         if let Err(e) = Command::set_global_commands(&ctx.http, commands).await {
             error!("failed to set global commands: {e:?}");
         }
+        info!("registered all global commands!");
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {

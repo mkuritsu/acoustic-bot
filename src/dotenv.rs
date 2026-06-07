@@ -2,7 +2,6 @@ use std::fs;
 
 const DOTENV_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.env");
 
-#[cfg(debug_assertions)]
 pub fn load_dotenv_vars() -> anyhow::Result<()> {
     fs::read_to_string(DOTENV_PATH)?
         .lines()
