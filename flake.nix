@@ -6,30 +6,23 @@
     systems.url = "github:nix-systems/default";
   };
 
-  outputs =
-    {
-      nixpkgs,
-      systems,
-      ...
-    }:
-    let
-      eachSystem =
-        fn: nixpkgs.lib.genAttrs (import systems) (system: fn nixpkgs.legacyPackages.${system});
-    in
-    {
-      devShells = eachSystem (pkgs: {
-        default = pkgs.mkShell {
-          packages = with pkgs; [
-            rustup
-            pkg-config
-            libopus
-            openssl
-            ffmpeg
-            yt-dlp
-          ];
+  outputs = {
+    self,
+    nixpkgs,
+    systems,
+    ...
+  }: let
+    eachSystem = fn: nixpkgs.lib.genAttrs (import systems) (system: fn nixpkgs.legacyPackages.${system});
+  in {
+    nixosModules.default = import ./nix/nixosModule.nix self;
 
-          env.RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
-        };
-      });
-    };
+    packages = eachSystem (pkgs: rec {
+      default = acoustic-bot;
+      acoustic-bot = pkgs.callPackage ./nix/package.nix {};
+    });
+
+    devShells = eachSystem (pkgs: {
+      default = pkgs.callPackage ./nix/shell.nix {};
+    });
+  };
 }
