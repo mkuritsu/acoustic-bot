@@ -7,7 +7,7 @@ use serenity::all::{
 use songbird::input::{AuxMetadata, Compose, YoutubeDl};
 use tracing::trace;
 
-use crate::HttpKey;
+use crate::context::ContextHttpClientExt;
 
 pub fn create() -> CreateCommand {
     CreateCommand::new("play")
@@ -63,12 +63,7 @@ async fn start_playback(
     let manager = songbird::get(ctx)
         .await
         .expect("Should have songbird instance");
-    let http_client = {
-        let data = ctx.data.read().await;
-        data.get::<HttpKey>()
-            .cloned()
-            .expect("Should have httpclient")
-    };
+    let http_client = ctx.get_http_client().await;
 
     let handler = manager
         .join(guild_id, channel_id)
@@ -78,7 +73,7 @@ async fn start_playback(
     handler.deafen(true).await.ok();
 
     let mut yt_source = YoutubeDl::new(http_client, String::from(url));
-    let _ = handler.play_input(yt_source.clone().into());
+    let _ = handler.play_only_input(yt_source.clone().into());
 
     let meta = yt_source.aux_metadata().await.ok();
     Ok(meta)

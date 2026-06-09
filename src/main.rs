@@ -1,27 +1,24 @@
-use reqwest::Client as HttpClient;
 use serenity::{
     Client,
     all::{Context, EventHandler, GatewayIntents, Ready},
     async_trait,
-    prelude::TypeMapKey,
 };
 use songbird::SerenityInit;
 use tracing_subscriber::EnvFilter;
 
-use crate::command_handler::CommandHandler;
 #[cfg(debug_assertions)]
 use crate::dotenv::load_dotenv_vars;
+use crate::{
+    context::SerenityHttpClientExt,
+    handlers::{command_handler::CommandHandler, voice_handler::VoiceHandler},
+};
 
-mod command_handler;
 mod commands;
+mod context;
+mod handlers;
 
 #[cfg(debug_assertions)]
 mod dotenv;
-
-struct HttpKey;
-impl TypeMapKey for HttpKey {
-    type Value = HttpClient;
-}
 
 struct StartupHandler;
 
@@ -50,9 +47,10 @@ async fn main() -> anyhow::Result<()> {
     let intents = GatewayIntents::non_privileged();
     let mut client = Client::builder(&token, intents)
         .register_songbird()
+        .register_http_client()
         .event_handler(CommandHandler)
         .event_handler(StartupHandler)
-        .type_map_insert::<HttpKey>(HttpClient::new())
+        .event_handler(VoiceHandler)
         .await?;
     client.start().await?;
     Ok(())
