@@ -75,6 +75,7 @@ async fn start_playback(
         .await
         .context("Could not get channel info!")?;
     let mut handler = handler.lock().await;
+    handler.deafen(true).await.ok();
 
     let mut yt_source = YoutubeDl::new(http_client, String::from(url));
     let _ = handler.play_input(yt_source.clone().into());
