@@ -8,11 +8,11 @@ use serenity::{
 use songbird::SerenityInit;
 use tracing_subscriber::EnvFilter;
 
+use crate::command_handler::CommandHandler;
 #[cfg(debug_assertions)]
 use crate::dotenv::load_dotenv_vars;
 
-use crate::commands::CommandHandler;
-
+mod command_handler;
 mod commands;
 
 #[cfg(debug_assertions)]
