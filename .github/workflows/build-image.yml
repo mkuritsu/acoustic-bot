@@ -67,6 +67,7 @@ jobs:
           context: .
           push: true
           platforms: ${{ matrix.platform }}
+          provenance: false
           tags: ${{ steps.arch-tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
