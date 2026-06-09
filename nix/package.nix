@@ -6,10 +6,12 @@
   libopus,
   ffmpeg,
   yt-dlp,
+  makeBinaryWrapper
 }:
 rustPlatform.buildRustPackage {
   pname = "acoustic-bot";
   version = "0.1.0";
+  cargoHash = "sha256-NGeN8zNbmLQxosLk5tn0p6LckouyCg1tqkq+Rmgr6/Y=";
 
   src = lib.fileset.toSource {
     root = ./..;
@@ -21,17 +23,19 @@ rustPlatform.buildRustPackage {
   };
 
   nativeBuildInputs = [
+    makeBinaryWrapper
     pkg-config
   ];
 
   buildInputs = [
     openssl
     libopus
-    ffmpeg
-    yt-dlp
   ];
 
-  cargoHash = "sha256-NGeN8zNbmLQxosLk5tn0p6LckouyCg1tqkq+Rmgr6/Y=";
+  postInstall = ''
+    wrapProgram $out/bin/acoustic-bot \
+      --prefix PATH : ${lib.makeBinPath [ ffmpeg yt-dlp ]} \
+  '';
 
   meta.mainProgram = "acoustic-bot";
 }
