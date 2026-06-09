@@ -4,6 +4,7 @@ use serenity::{
     async_trait,
 };
 use songbird::SerenityInit;
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 #[cfg(debug_assertions)]
@@ -52,6 +53,18 @@ async fn main() -> anyhow::Result<()> {
         .event_handler(StartupHandler)
         .event_handler(VoiceHandler)
         .await?;
-    client.start().await?;
+
+    let task = tokio::spawn(async move { client.start().await });
+    tokio::select! {
+        res = task => {
+            let res = res?;
+            if let Err(err) = res {
+                anyhow::bail!("client error: {err}");
+            }
+        },
+        _ = tokio::signal::ctrl_c() => {
+            info!("Shutting down...");
+        }
+    }
     Ok(())
 }
