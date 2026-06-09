@@ -4,10 +4,13 @@ use serenity::all::{
     CreateCommandOption, CreateEmbed, CreateInteractionResponse, CreateInteractionResponseMessage,
     EditInteractionResponse, GuildId, ResolvedValue,
 };
-use songbird::input::{AuxMetadata, Compose, YoutubeDl};
+use songbird::{
+    Event, TrackEvent,
+    input::{AuxMetadata, Compose, YoutubeDl},
+};
 use tracing::trace;
 
-use crate::context::ContextHttpClientExt;
+use crate::{context::ContextHttpClientExt, handlers::track_end_handler::TrackEndHandler};
 
 pub fn create() -> CreateCommand {
     CreateCommand::new("play")
@@ -73,7 +76,16 @@ async fn start_playback(
     handler.deafen(true).await.ok();
 
     let mut yt_source = YoutubeDl::new(http_client, String::from(url));
-    let _ = handler.play_only_input(yt_source.clone().into());
+    let track = handler.play_only_input(yt_source.clone().into());
+    track
+        .add_event(
+            Event::Track(TrackEvent::End),
+            TrackEndHandler {
+                guild_id,
+                manager: manager.clone(),
+            },
+        )
+        .ok();
 
     let meta = yt_source.aux_metadata().await.ok();
     Ok(meta)
