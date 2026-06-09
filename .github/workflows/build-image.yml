@@ -11,11 +11,17 @@ on:
     paths:
       - "src/**"
       - "Dockerfile"
-      - ".github/workflows/image.yml"
+      - ".github/workflows/build-image.yml"
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - platform: ubuntu-latest
+          - platform: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.platform }}
 
     steps:
       - name: Checkout repository
@@ -46,6 +52,5 @@ jobs:
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
