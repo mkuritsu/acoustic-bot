@@ -3,7 +3,7 @@ use serenity::all::{
     CreateEmbed, CreateInteractionResponse, CreateInteractionResponseMessage,
     EditInteractionResponse, ResolvedValue,
 };
-use songbird::input::YoutubeDl;
+use songbird::input::{Compose, YoutubeDl};
 use tracing::trace;
 
 use crate::HttpKey;
@@ -38,16 +38,12 @@ pub async fn execute(ctx: &Context, cmd: &CommandInteraction) {
         return;
     };
 
-    let Ok(voice_state) = guild_id.get_user_voice_state(&ctx.http, cmd.user.id).await else {
-        let _ = send_response(
-            cmd,
-            ctx,
-            error_embed("You need to be connected to a voice channel to use this command!"),
-        )
-        .await;
-        return;
-    };
-    let Some(channel_id) = voice_state.channel_id else {
+    let Some(channel_id) = guild_id
+        .get_user_voice_state(&ctx.http, cmd.user.id)
+        .await
+        .ok()
+        .and_then(|voice_state| voice_state.channel_id)
+    else {
         let _ = send_response(
             cmd,
             ctx,
@@ -76,26 +72,25 @@ pub async fn execute(ctx: &Context, cmd: &CommandInteraction) {
 
     let mut handler = handler_lock.lock().await;
     let mut yt_source = YoutubeDl::new(http_client, String::from(url));
+    let meta = yt_source.aux_metadata().await.ok();
 
-    let Ok(outputs) = yt_source.query(1).await else {
-        let _ = send_response(cmd, ctx, error_embed("Couldn't find the requested song!")).await;
-        return;
-    };
-    let Some(output) = outputs.first() else {
-        let _ = send_response(cmd, ctx, error_embed("Couldn't find the requested song!")).await;
-        return;
-    };
+    let song_title = meta
+        .as_ref()
+        .and_then(|m| m.title.as_deref())
+        .unwrap_or("<untitled>");
 
-    let _ = handler.play_input(yt_source.clone().into());
+    let song_artist = meta
+        .as_ref()
+        .and_then(|m| m.artist.as_deref())
+        .unwrap_or("<unknown artist>");
+
+    let _ = handler.play_input(yt_source.into());
     let _ = send_edit_response(
         cmd,
         ctx,
         success_embed(
             "Now Playing!",
-            format!(
-                "I will now play: {}",
-                output.title.clone().unwrap_or(String::from("<untitled>"))
-            ),
+            format!("I will now play: {song_title} by {song_artist}"),
         ),
     )
     .await;
