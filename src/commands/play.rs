@@ -16,8 +16,12 @@ pub fn create() -> CreateCommand {
     CreateCommand::new("play")
         .description("play some music!")
         .add_option(
-            CreateCommandOption::new(CommandOptionType::String, "url", "the youtube url")
-                .required(true),
+            CreateCommandOption::new(
+                CommandOptionType::String,
+                "query",
+                "youtube url or search query",
+            )
+            .required(true),
         )
 }
 
@@ -33,16 +37,16 @@ pub async fn execute(ctx: &Context, cmd: &CommandInteraction) -> anyhow::Result<
         .and_then(|voice_state| voice_state.channel_id)
         .context("You need to be connected to a voice channel to use this command!")?;
 
-    let url = cmd
+    let query = cmd
         .data
         .options()
         .first()
         .cloned()
-        .context("You need to provide an url!")?;
-    let ResolvedValue::String(url) = url.value else {
-        anyhow::bail!("Invalid url type!");
+        .context("You need to provide a query!")?;
+    let ResolvedValue::String(query) = query.value else {
+        anyhow::bail!("Invalid query type!");
     };
-    trace!("Received play for {url} in {channel_id}");
+    trace!("Received play for {query} in {channel_id}");
 
     let _ = cmd
         .create_response(
@@ -51,7 +55,7 @@ pub async fn execute(ctx: &Context, cmd: &CommandInteraction) -> anyhow::Result<
         )
         .await;
 
-    let metadata = start_playback(ctx, url, guild_id, channel_id).await?;
+    let metadata = start_playback(ctx, query, guild_id, channel_id).await?;
     send_reply(ctx, cmd, metadata).await;
 
     Ok(())
@@ -59,7 +63,7 @@ pub async fn execute(ctx: &Context, cmd: &CommandInteraction) -> anyhow::Result<
 
 async fn start_playback(
     ctx: &Context,
-    url: &str,
+    query: &str,
     guild_id: GuildId,
     channel_id: ChannelId,
 ) -> anyhow::Result<Option<AuxMetadata>> {
@@ -75,7 +79,11 @@ async fn start_playback(
     let mut handler = handler.lock().await;
     handler.deafen(true).await.ok();
 
-    let mut yt_source = YoutubeDl::new(http_client, String::from(url));
+    let mut yt_source = if query.starts_with("https://") || query.starts_with("http://") {
+        YoutubeDl::new(http_client, String::from(query))
+    } else {
+        YoutubeDl::new_search(http_client, String::from(query))
+    };
     let track = handler.play_only_input(yt_source.clone().into());
     track
         .add_event(
