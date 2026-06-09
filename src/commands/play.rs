@@ -92,7 +92,9 @@ async fn send_reply(ctx: &Context, cmd: &CommandInteraction, metadata: Option<Au
 
     let embed = CreateEmbed::new()
         .title("Now Playing!")
-        .description(format!("I will now play: {song_title} by {song_artist}"))
+        .description(format!(
+            "I will now play: **{song_title}** by **{song_artist}**"
+        ))
         .color(Color::DARK_GREEN);
 
     let _ = cmd
