@@ -110,12 +110,19 @@ async fn send_reply(ctx: &Context, cmd: &CommandInteraction, metadata: Option<Au
         .and_then(|m| m.artist.as_deref())
         .unwrap_or("<unknown artist>");
 
+    let source_url = metadata.as_ref().and_then(|m| m.source_url.as_deref());
+
+    let thumbnail_url = metadata.as_ref().and_then(|m| m.thumbnail.as_deref());
+
+    let message = source_url.map_or_else(
+        || format!("**{song_title}** by **{song_artist}**"),
+        |url| format!("[**{song_title}**]({url}) by **{song_artist}**"),
+    );
     let embed = CreateEmbed::new()
-        .title("Now Playing!")
-        .description(format!(
-            "I will now play: **{song_title}** by **{song_artist}**"
-        ))
-        .color(Color::DARK_GREEN);
+        .title("🎶  Now Playing  🎶")
+        .description(message)
+        .color(Color::from_rgb(34, 255, 253))
+        .thumbnail(thumbnail_url.unwrap_or_default());
 
     let _ = cmd
         .edit_response(&ctx.http, EditInteractionResponse::new().add_embed(embed))
