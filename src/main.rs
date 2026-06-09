@@ -8,9 +8,14 @@ use serenity::{
 use songbird::SerenityInit;
 use tracing_subscriber::EnvFilter;
 
-use crate::{commands::CommandHandler, dotenv::load_dotenv_vars};
+#[cfg(debug_assertions)]
+use crate::dotenv::load_dotenv_vars;
+
+use crate::commands::CommandHandler;
 
 mod commands;
+
+#[cfg(debug_assertions)]
 mod dotenv;
 
 struct HttpKey;
