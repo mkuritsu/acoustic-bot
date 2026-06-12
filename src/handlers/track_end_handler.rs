@@ -20,8 +20,8 @@ impl SongbirdEventHandler for TrackEndHandler {
                 .all(|(state, _)| state.playing == PlayMode::End);
             if all_ended {
                 // TODO: would be better to wait for some time before disconnecting, still need to figure out how to do that
-                info!("All tracks have ended, disconnecting...");
-                self.manager.remove(self.guild_id).await.ok();
+                // info!("All tracks have ended, disconnecting...");
+                // self.manager.remove(self.guild_id).await.ok();
             }
         }
         None

@@ -7,11 +7,15 @@ use serenity::{
     async_trait,
 };
 
-use crate::commands::play;
+use crate::commands::{clear_queue, play, skip};
 
 pub type CommandCreateFn = fn() -> CreateCommand;
 
-const COMMAND_BUILDERS: &[(&str, CommandCreateFn)] = &[("play", play::create)];
+const COMMAND_BUILDERS: &[(&str, CommandCreateFn)] = &[
+    ("play", play::create),
+    ("skip", skip::create),
+    ("clearqueue", clear_queue::create),
+];
 
 pub struct CommandHandler;
 
@@ -19,6 +23,8 @@ impl CommandHandler {
     async fn handle_command(&self, ctx: &Context, cmd: &CommandInteraction) -> anyhow::Result<()> {
         match cmd.data.name.as_str() {
             "play" => play::execute(ctx, cmd).await,
+            "skip" => skip::execute(ctx, cmd).await,
+            "clearqueue" => clear_queue::execute(ctx, cmd).await,
             _ => {
                 panic!(
                     "handle_command called with unknown command: {}",

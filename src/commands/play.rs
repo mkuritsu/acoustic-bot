@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Context as _;
 use serenity::all::{
     ChannelId, Color, CommandInteraction, CommandOptionType, Context, CreateCommand,
@@ -10,7 +12,10 @@ use songbird::{
 };
 use tracing::trace;
 
-use crate::{context::ContextHttpClientExt, handlers::track_end_handler::TrackEndHandler};
+use crate::{
+    commands::check_user_channel, context::ContextHttpClientExt,
+    handlers::track_end_handler::TrackEndHandler,
+};
 
 pub fn create() -> CreateCommand {
     CreateCommand::new("play")
@@ -26,16 +31,7 @@ pub fn create() -> CreateCommand {
 }
 
 pub async fn execute(ctx: &Context, cmd: &CommandInteraction) -> anyhow::Result<()> {
-    let guild_id = cmd
-        .guild_id
-        .context("You need to be on a server to use this command!")?;
-
-    let channel_id = guild_id
-        .get_user_voice_state(&ctx.http, cmd.user.id)
-        .await
-        .ok()
-        .and_then(|voice_state| voice_state.channel_id)
-        .context("You need to be connected to a voice channel to use this command!")?;
+    let (guild_id, channel_id) = check_user_channel(ctx, cmd).await?;
 
     let query = cmd
         .data
@@ -66,7 +62,7 @@ async fn start_playback(
     query: &str,
     guild_id: GuildId,
     channel_id: ChannelId,
-) -> anyhow::Result<Option<AuxMetadata>> {
+) -> anyhow::Result<AuxMetadata> {
     let manager = songbird::get(ctx)
         .await
         .expect("Should have songbird instance");
@@ -84,7 +80,8 @@ async fn start_playback(
     } else {
         YoutubeDl::new_search(http_client, String::from(query))
     };
-    let track = handler.play_only_input(yt_source.clone().into());
+    let metadata = yt_source.aux_metadata().await.context("Song not found!")?;
+    let track = handler.enqueue_with_preload(yt_source.into(), Some(Duration::from_secs(20)));
     track
         .add_event(
             Event::Track(TrackEvent::End),
@@ -95,24 +92,20 @@ async fn start_playback(
         )
         .ok();
 
-    let meta = yt_source.aux_metadata().await.ok();
-    Ok(meta)
+    Ok(metadata)
 }
 
-async fn send_reply(ctx: &Context, cmd: &CommandInteraction, metadata: Option<AuxMetadata>) {
+async fn send_reply(ctx: &Context, cmd: &CommandInteraction, metadata: AuxMetadata) {
     let song_title = metadata
-        .as_ref()
-        .and_then(|m| m.title.as_deref())
-        .unwrap_or("<unknown title>");
+        .title
+        .unwrap_or_else(|| "<unknown title>".to_string());
 
     let song_artist = metadata
-        .as_ref()
-        .and_then(|m| m.artist.as_deref())
-        .unwrap_or("<unknown artist>");
+        .artist
+        .unwrap_or_else(|| "<unknown artist>".to_string());
 
-    let source_url = metadata.as_ref().and_then(|m| m.source_url.as_deref());
-
-    let thumbnail_url = metadata.as_ref().and_then(|m| m.thumbnail.as_deref());
+    let source_url = metadata.source_url;
+    let thumbnail_url = metadata.thumbnail;
 
     let message = source_url.map_or_else(
         || format!("**{song_title}** by **{song_artist}**"),
