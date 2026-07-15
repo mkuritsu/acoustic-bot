@@ -4,6 +4,8 @@ use serenity::{
 };
 use tracing::info;
 
+use crate::queue_store;
+
 pub struct VoiceHandler;
 
 #[async_trait]
@@ -23,6 +25,7 @@ impl EventHandler for VoiceHandler {
             .expect("Should have songbird instance");
         if new.channel_id.is_none() && manager.get(guild_id).is_some() {
             manager.remove(guild_id).await.ok();
+            queue_store::remove(guild_id);
             info!("removing manager for guild {guild_id}");
         }
     }

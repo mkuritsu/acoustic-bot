@@ -4,7 +4,7 @@ use serenity::all::{
     CreateInteractionResponseMessage,
 };
 
-use crate::commands::check_user_channel;
+use crate::{commands::check_user_channel, queue_store};
 
 pub fn create() -> CreateCommand {
     CreateCommand::new("clearqueue").description("skip to the next song in the queue")
@@ -25,6 +25,8 @@ pub async fn execute(ctx: &Context, cmd: &CommandInteraction) -> anyhow::Result<
         let song = queue.dequeue(queue.len() - 1);
         song.and_then(|s| s.stop().ok());
     }
+
+    queue_store::keep_first(guild_id);
 
     let embed = CreateEmbed::new()
         .description("Queue has been cleared")

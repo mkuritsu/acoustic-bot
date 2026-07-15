@@ -17,6 +17,7 @@ use crate::{
 mod commands;
 mod context;
 mod handlers;
+mod queue_store;
 
 #[cfg(debug_assertions)]
 mod dotenv;

@@ -4,7 +4,7 @@ use serenity::all::{
     CreateInteractionResponseMessage,
 };
 
-use crate::commands::check_user_channel;
+use crate::{commands::check_user_channel, queue_store};
 
 pub fn create() -> CreateCommand {
     CreateCommand::new("skip").description("skip to the next song in the queue")
@@ -27,7 +27,7 @@ pub async fn execute(ctx: &Context, cmd: &CommandInteraction) -> anyhow::Result<
     queue.current().context("No track playing!")?;
     queue.skip().context("Failed to skip song!")?;
 
-    println!("called skip");
+    queue_store::pop_front(guild_id);
 
     let embed = CreateEmbed::new()
         .description("Song has been skipped")

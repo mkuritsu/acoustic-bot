@@ -3,6 +3,7 @@ use serenity::all::{ChannelId, CommandInteraction, Context, GuildId};
 
 pub mod clear_queue;
 pub mod play;
+pub mod queue;
 pub mod skip;
 
 async fn check_user_channel(

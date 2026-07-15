@@ -9,7 +9,8 @@ reqwest = "0.12.2"
 serenity = "0.12.5"
 songbird = { version = "0.6.0", features = ["builtin-queue"] }
 symphonia = { version = "0.5.2", features = ["mp3", "aac", "isomp4", "alac"] }
-tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "signal"] }
+serde_json = "1"
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "signal", "time", "process"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
