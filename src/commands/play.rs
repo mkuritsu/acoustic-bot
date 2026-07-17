@@ -14,7 +14,8 @@ use tracing::{info, trace};
 
 use crate::{
     commands::check_user_channel, context::ContextHttpClientExt,
-    handlers::track_end_handler::TrackEndHandler, queue_store::{self, TrackMetadata},
+    handlers::track_end_handler::TrackEndHandler,
+    queue_store::{self, TrackMetadata},
 };
 
 pub fn create() -> CreateCommand {
@@ -51,13 +52,12 @@ pub async fn execute(ctx: &Context, cmd: &CommandInteraction) -> anyhow::Result<
         )
         .await;
 
-    let user = cmd.user.clone();
-    let metadata = if is_playlist_url(query) {
-        start_playlist(ctx, query, guild_id, channel_id, user).await?
+    let (metadata, started_now) = if is_playlist_url(query) {
+        start_playlist(ctx, query, guild_id, channel_id, cmd.user.clone()).await?
     } else {
-        start_single(ctx, query, guild_id, channel_id, user).await?
+        start_single(ctx, query, guild_id, channel_id, cmd.user.clone()).await?
     };
-    send_reply(ctx, cmd, metadata).await;
+    send_reply(ctx, cmd, metadata, started_now).await;
 
     Ok(())
 }
@@ -72,7 +72,7 @@ async fn start_playlist(
     guild_id: GuildId,
     channel_id: ChannelId,
     user: User,
-) -> anyhow::Result<AuxMetadata> {
+) -> anyhow::Result<(AuxMetadata, bool)> {
     let manager = songbird::get(ctx)
         .await
         .expect("Should have songbird instance");
@@ -85,6 +85,8 @@ async fn start_playlist(
     let mut handler = handler.lock().await;
     handler.deafen(true).await.ok();
 
+    let will_play_now = handler.queue().is_empty() && handler.queue().current().is_none();
+
     let items = fetch_playlist_items(url).await?;
     let total = items.len();
     let mut first_meta = None;
@@ -93,7 +95,7 @@ async fn start_playlist(
         let video_url = format!("https://www.youtube.com/watch?v={}", item.id);
         let mut yt_source = YoutubeDl::new(http_client.clone(), video_url);
 
-        let (track_title, track_duration) = if i == 0 {
+        let (track_title, track_duration, track_thumbnail) = if i == 0 {
             let meta = yt_source.aux_metadata().await?;
             first_meta = Some(meta.clone());
             let title = meta
@@ -101,10 +103,11 @@ async fn start_playlist(
                 .clone()
                 .unwrap_or_else(|| item.title.clone());
             let duration = meta.duration.or(item.duration.map(Duration::from_secs_f64));
-            (title, duration)
+            let thumbnail = meta.thumbnail.clone().or_else(|| item.thumbnail.clone());
+            (title, duration, thumbnail)
         } else {
             let duration = item.duration.map(Duration::from_secs_f64);
-            (item.title.clone(), duration)
+            (item.title.clone(), duration, item.thumbnail.clone())
         };
 
         let track = if i == 0 {
@@ -127,6 +130,7 @@ async fn start_playlist(
             TrackMetadata {
                 title: track_title,
                 duration: track_duration,
+                thumbnail: track_thumbnail,
                 user: user.clone(),
             },
         );
@@ -134,7 +138,7 @@ async fn start_playlist(
         info!("enqueued ({i}/{total}): {}", item.title);
     }
 
-    Ok(first_meta.expect("playlist had at least one item"))
+    Ok((first_meta.expect("playlist had at least one item"), will_play_now))
 }
 
 async fn start_single(
@@ -143,25 +147,30 @@ async fn start_single(
     guild_id: GuildId,
     channel_id: ChannelId,
     user: User,
-) -> anyhow::Result<AuxMetadata> {
+) -> anyhow::Result<(AuxMetadata, bool)> {
     let manager = songbird::get(ctx)
         .await
         .expect("Should have songbird instance");
     let http_client = ctx.get_http_client().await;
-
-    let handler = manager
-        .join(guild_id, channel_id)
-        .await
-        .context("Could not get channel info!")?;
-    let mut handler = handler.lock().await;
-    handler.deafen(true).await.ok();
 
     let mut yt_source = if query.starts_with("https://") || query.starts_with("http://") {
         YoutubeDl::new(http_client, String::from(query))
     } else {
         YoutubeDl::new_search(http_client, String::from(query))
     };
-    let metadata = yt_source.aux_metadata().await.context("Song not found!")?;
+
+    // run VC join and yt-dlp metadata fetch in parallel
+    let join_fut = manager.join(guild_id, channel_id);
+    let meta_fut = yt_source.aux_metadata();
+    let (join_result, meta_result) = tokio::join!(join_fut, meta_fut);
+
+    let handler_arc = join_result.context("Could not get channel info!")?;
+    let mut handler = handler_arc.lock().await;
+    handler.deafen(true).await.ok();
+
+    let will_play_now = handler.queue().is_empty() && handler.queue().current().is_none();
+
+    let metadata = meta_result.context("Song not found!")?;
     let track = handler.enqueue_with_preload(yt_source.into(), Some(Duration::from_secs(20)));
     track
         .add_event(
@@ -181,11 +190,12 @@ async fn start_single(
                 .clone()
                 .unwrap_or_else(|| "<unknown title>".to_string()),
             duration: metadata.duration,
+            thumbnail: metadata.thumbnail.clone(),
             user,
         },
     );
 
-    Ok(metadata)
+    Ok((metadata, will_play_now))
 }
 
 async fn fetch_playlist_items(url: &str) -> anyhow::Result<Vec<PlaylistItem>> {
@@ -217,8 +227,14 @@ async fn fetch_playlist_items(url: &str) -> anyhow::Result<Vec<PlaylistItem>> {
             .to_string();
         let title = value["title"].as_str().unwrap_or("<unknown>").to_string();
         let duration = value["duration"].as_f64();
+        let thumbnail = value["thumbnail"].as_str().map(String::from);
 
-        items.push(PlaylistItem { id, title, duration });
+        items.push(PlaylistItem {
+            id,
+            title,
+            duration,
+            thumbnail,
+        });
     }
 
     anyhow::ensure!(!items.is_empty(), "No videos found in playlist");
@@ -230,9 +246,15 @@ struct PlaylistItem {
     id: String,
     title: String,
     duration: Option<f64>,
+    thumbnail: Option<String>,
 }
 
-async fn send_reply(ctx: &Context, cmd: &CommandInteraction, metadata: AuxMetadata) {
+async fn send_reply(
+    ctx: &Context,
+    cmd: &CommandInteraction,
+    metadata: AuxMetadata,
+    started_now: bool,
+) {
     let song_title = metadata
         .title
         .unwrap_or_else(|| "<unknown title>".to_string());
@@ -244,12 +266,19 @@ async fn send_reply(ctx: &Context, cmd: &CommandInteraction, metadata: AuxMetada
     let source_url = metadata.source_url;
     let thumbnail_url = metadata.thumbnail;
 
+    let embed_title = if started_now {
+        "🎶  Now Playing  🎶"
+    } else {
+        "🎶  Queued  🎶"
+    };
+
     let message = source_url.map_or_else(
         || format!("**{song_title}** by **{song_artist}**"),
         |url| format!("[**{song_title}**]({url}) by **{song_artist}**"),
     );
+
     let embed = CreateEmbed::new()
-        .title("🎶  Now Playing  🎶")
+        .title(embed_title)
         .description(message)
         .color(Color::from_rgb(34, 255, 253))
         .thumbnail(thumbnail_url.unwrap_or_default());

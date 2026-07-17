@@ -10,6 +10,7 @@ use serenity::all::{GuildId, User};
 pub struct TrackMetadata {
     pub title: String,
     pub duration: Option<Duration>,
+    pub thumbnail: Option<String>,
     pub user: User,
 }
 
