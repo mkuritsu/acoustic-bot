@@ -87,58 +87,94 @@ async fn start_playlist(
 
     let will_play_now = handler.queue().is_empty() && handler.queue().current().is_none();
 
-    let items = fetch_playlist_items(url).await?;
-    let total = items.len();
-    let mut first_meta = None;
+    let all_items = fetch_playlist_items(url).await?;
+    let total = all_items.len();
 
-    for (i, item) in items.iter().enumerate() {
-        let video_url = format!("https://www.youtube.com/watch?v={}", item.id);
-        let mut yt_source = YoutubeDl::new(http_client.clone(), video_url);
+    // --- first track: enqueue immediately so playback can start ---
+    let mut items = all_items;
+    let first = items.remove(0);
+    let video_url = format!("https://www.youtube.com/watch?v={}", first.id);
+    let mut yt_source = YoutubeDl::new(http_client.clone(), video_url);
+    let meta = yt_source.aux_metadata().await?;
+    let track_title = meta
+        .title
+        .clone()
+        .unwrap_or_else(|| first.title.clone());
+    let track_duration = meta.duration.or(first.duration.map(Duration::from_secs_f64));
+    let track_thumbnail = meta.thumbnail.clone().or_else(|| first.thumbnail.clone());
 
-        let (track_title, track_duration, track_thumbnail) = if i == 0 {
-            let meta = yt_source.aux_metadata().await?;
-            first_meta = Some(meta.clone());
-            let title = meta
-                .title
-                .clone()
-                .unwrap_or_else(|| item.title.clone());
-            let duration = meta.duration.or(item.duration.map(Duration::from_secs_f64));
-            let thumbnail = meta.thumbnail.clone().or_else(|| item.thumbnail.clone());
-            (title, duration, thumbnail)
-        } else {
-            let duration = item.duration.map(Duration::from_secs_f64);
-            (item.title.clone(), duration, item.thumbnail.clone())
-        };
-
-        let track = if i == 0 {
-            handler.enqueue_with_preload(yt_source.into(), Some(Duration::from_secs(20)))
-        } else {
-            handler.enqueue(yt_source.into()).await
-        };
-        track
-            .add_event(
-                Event::Track(TrackEvent::End),
-                TrackEndHandler {
-                    guild_id,
-                    manager: manager.clone(),
-                },
-            )
-            .ok();
-
-        queue_store::push(
-            guild_id,
-            TrackMetadata {
-                title: track_title,
-                duration: track_duration,
-                thumbnail: track_thumbnail,
-                user: user.clone(),
+    let track = handler.enqueue_with_preload(yt_source.into(), Some(Duration::from_secs(20)));
+    track
+        .add_event(
+            Event::Track(TrackEvent::End),
+            TrackEndHandler {
+                guild_id,
+                manager: manager.clone(),
             },
-        );
+        )
+        .ok();
 
-        info!("enqueued ({i}/{total}): {}", item.title);
-    }
+    queue_store::push(
+        guild_id,
+        TrackMetadata {
+            title: track_title,
+            duration: track_duration,
+            thumbnail: track_thumbnail,
+            user: user.clone(),
+        },
+    );
 
-    Ok((first_meta.expect("playlist had at least one item"), will_play_now))
+    info!("enqueued (1/{total}): {}", first.title);
+    drop(handler);
+    let first_meta = meta;
+
+    // --- remaining tracks: enqueue in background so the caller returns faster ---
+    let manager_bg = manager.clone();
+    let http_client_bg = http_client.clone();
+    let guild_id_bg = guild_id;
+    let user_bg = user;
+    let total_bg = total;
+
+    tokio::spawn(async move {
+        for (idx, item) in items.iter().enumerate() {
+            let video_url = format!("https://www.youtube.com/watch?v={}", item.id);
+            let yt_source = YoutubeDl::new(http_client_bg.clone(), video_url);
+
+            let track_duration = item.duration.map(Duration::from_secs_f64);
+            let track_thumbnail = item.thumbnail.clone();
+
+            let Some(handler_lock) = manager_bg.get(guild_id_bg) else {
+                info!("bot left voice channel, stopping playlist enqueue");
+                return;
+            };
+            let mut handler = handler_lock.lock().await;
+            let track = handler.enqueue(yt_source.into()).await;
+            track
+                .add_event(
+                    Event::Track(TrackEvent::End),
+                    TrackEndHandler {
+                        guild_id: guild_id_bg,
+                        manager: manager_bg.clone(),
+                    },
+                )
+                .ok();
+            drop(handler);
+
+            queue_store::push(
+                guild_id_bg,
+                TrackMetadata {
+                    title: item.title.clone(),
+                    duration: track_duration,
+                    thumbnail: track_thumbnail,
+                    user: user_bg.clone(),
+                },
+            );
+
+            info!("enqueued ({}/{total_bg}): {}", idx + 2, item.title);
+        }
+    });
+
+    Ok((first_meta, will_play_now))
 }
 
 async fn start_single(
